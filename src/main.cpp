@@ -45,6 +45,9 @@
 #include <geometry_msgs/PoseStamped.h>
 #include "cv_bridge/cv_bridge.h"
 
+#include <geometry_msgs/PoseWithCovarianceStamped.h>
+
+
 
 std::string calib = "";
 std::string vignetteFile = "";
@@ -53,6 +56,56 @@ std::string saveFile = "";
 bool useSampleOutput=false;
 
 using namespace dso;
+
+
+class PosePublisher : public dso::IOWrap::Output3DWrapper {
+public:
+  PosePublisher(ros::NodeHandle& nh)
+  	: pose_pub(nh.advertise<geometry_msgs::PoseWithCovarianceStamped>("dso_pose", 10)), frame_number(0)
+  {
+ 	pose_cov = std::pow(0.02, 2)/std::sqrt(3);
+ 	orient_cov = std::pow(0.01, 2);
+  }
+
+  // frame->camToWorld - Mat 3x4, матрица преобразования в систему мировых координат
+  void publishCamPose(FrameShell* frame, CalibHessian* HCalib) override {
+    Eigen::Quaterniond quat(frame->camToWorld.rotationMatrix());
+    Eigen::Vector3d trans = frame->camToWorld.translation();
+
+    geometry_msgs::PoseWithCovarianceStamped pose_msg;
+    pose_msg.header.stamp = ros::Time(frame->timestamp);
+    pose_msg.header.frame_id = "odom";
+    pose_msg.header.seq = ++frame_number;
+
+	// Position    
+    pose_msg.pose.pose.position.x = trans.x();
+    pose_msg.pose.pose.position.y = trans.y();
+    pose_msg.pose.pose.position.z = trans.z();
+    pose_msg.pose.pose.orientation.w = quat.w();
+    pose_msg.pose.pose.orientation.x = quat.x();
+    pose_msg.pose.pose.orientation.y = quat.y();
+    pose_msg.pose.pose.orientation.z = quat.z();
+
+    // IDEA: more accurate covariance estimate 
+    // Covariance
+    pose_msg.pose.covariance = boost::array<double, 36>({
+    	pose_cov, 0.,       0.,       0.,         0.,         0.,
+    	0.,       pose_cov, 0.,       0.,         0.,         0.,
+    	0.,       0.,       pose_cov, 0.,         0.,         0.,
+    	0.,       0.,       0.,       orient_cov, 0.,         0.,
+    	0.,       0.,       0.,       0.,         orient_cov, 0.,
+    	0.,       0.,       0.,       0.,         0.,         orient_cov
+    });
+
+    pose_pub.publish(pose_msg);
+  }
+
+private:
+  ros::Publisher pose_pub;
+  int frame_number;
+  float pose_cov, orient_cov;
+};
+
 
 void parseArgument(char* arg)
 {
@@ -221,15 +274,16 @@ int main( int argc, char** argv )
 	    		 (int)undistorter->getSize()[1]));
 
 
-    if(useSampleOutput)
-        fullSystem->outputWrapper.push_back(new IOWrap::SampleOutputWrapper());
-
+    // if(useSampleOutput)
+    //     fullSystem->outputWrapper.push_back(new IOWrap::SampleOutputWrapper());
 
     if(undistorter->photometricUndist != 0)
     	fullSystem->setGammaFunction(undistorter->photometricUndist->getG());
 
     ros::NodeHandle nh;
     ros::Subscriber imgSub = nh.subscribe("image", 1, &vidCb);
+
+    fullSystem->outputWrapper.push_back(new PosePublisher(nh));
 
     ros::spin();
     fullSystem->printResult(saveFile); 
