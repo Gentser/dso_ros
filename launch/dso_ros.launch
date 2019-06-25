@@ -1,0 +1,11 @@
+<launch>
+
+    <remap from="image" to="front_right_view"/>
+
+    <node pkg="dso_ros" type="dso_live" name="dso_live" 
+          args="calib=$(find dso_ros)/src/calibCameraDSO.txt nolog=1 quiet=1" 
+          output="screen" />
+
+    
+
+</launch> 
