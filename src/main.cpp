@@ -73,7 +73,7 @@ public:
     Eigen::Vector3d trans = frame->camToWorld.translation();
 
     geometry_msgs::PoseWithCovarianceStamped pose_msg;
-    pose_msg.header.stamp = ros::Time(frame->timestamp);
+    pose_msg.header.stamp = ros::Time::now();    // ros::Time(frame->timestamp)
     pose_msg.header.frame_id = "odom";
     pose_msg.header.seq = ++frame_number;
 
